@@ -1,6 +1,6 @@
-# dsh-screenshot
+﻿# dsh-screenshot
 
-给 [DeepSeek Harness](https://github.com/deepseek-ai) Web UI 用的截图插件：点一下按钮，浏览器窗口先隐藏，
+给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web UI 用的截图插件：点一下按钮，浏览器窗口先隐藏，
 在真实桌面上拖框选区，窗口自动回来，PNG 作为**待发送附件**落进输入框草稿。你不按回车，它就不会发出去。
 
 [English](README.md) | 中文

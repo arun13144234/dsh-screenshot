@@ -1,6 +1,6 @@
-# dsh-screenshot
+﻿# dsh-screenshot
 
-A screenshot button for the [DeepSeek Harness](https://github.com/deepseek-ai) Web UI: click it, the
+A screenshot button for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web UI: click it, the
 browser window hides, you drag a region on the real desktop, the window comes back, and the PNG
 lands in the composer draft as a pending attachment. Nothing is sent until you press Enter.
 
