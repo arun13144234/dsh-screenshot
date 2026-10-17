@@ -1,0 +1,48 @@
+{
+  "name": "@local/dsh-screenshot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Screenshot button for the DeepSeek Harness Web UI: hides the window, captures a screen region, and drops the PNG into the composer draft.",
+  "license": "MIT",
+  "author": "ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arun13144234/dsh-screenshot.git"
+  },
+  "homepage": "https://github.com/arun13144234/dsh-screenshot#readme",
+  "bugs": {
+    "url": "https://github.com/arun13144234/dsh-screenshot/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "bundle",
+    "screenshot",
+    "windows"
+  ],
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "scripts/*",
+    "locale/*.json"
+  ],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": ["@deepseek-ai/dsh-client-ui-conversation"]
+    }
+  }
+}

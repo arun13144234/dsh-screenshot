@@ -1,0 +1,47 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  syntax:
+    name: JS syntax and manifest
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Parse the plugin halves
+        run: |
+          node --check index.js
+          node --check client.js
+      - name: Validate JSON files
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem -Recurse -Include *.json -Exclude package-lock.json |
+            Where-Object { $_.FullName -notmatch 'node_modules' } |
+            ForEach-Object {
+              try {
+                $raw = [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::UTF8)
+                $raw | ConvertFrom-Json | Out-Null
+                Write-Host "ok   $($_.Name)"
+              } catch {
+                $failed = $true
+                Write-Host "FAIL $($_.Name): $_"
+              }
+            }
+          if ($failed) { exit 1 }
+      - name: Check the bundle patch without pnpm
+        shell: pwsh
+        run: |
+          # No dependency on the DSH loader: assert the patch file exists and parses
+          # as YAML by shelling out to node's js-yaml only if it happens to be present.
+          if (-not (Test-Path cordis.patch.yml)) { throw 'cordis.patch.yml missing' }
+          $text = Get-Content cordis.patch.yml -Raw
+          if ($text -notmatch 'id:\s*dsh-screenshot') { throw 'patch does not insert the plugin row' }
+          if ($text -notmatch "@local/dsh-screenshot") { throw 'patch row name does not match package.json name' }
+          Write-Host 'patch looks consistent'

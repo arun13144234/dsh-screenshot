@@ -1,0 +1,10 @@
+# Normalize line endings so a Windows checkout and CI agree.
+* text=auto eol=lf
+
+# Keep binary fixtures binary (there are none today, but be explicit).
+*.png binary
+*.gif binary
+
+# Files GitHub should never try to diff.
+*.ps1 text eol=lf
+*.cs  text eol=lf

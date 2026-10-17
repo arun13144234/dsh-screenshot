@@ -1,0 +1,16 @@
+# dependencies
+node_modules/
+
+# logs and scratch files
+*.log
+*.tmp
+*.png.bak
+
+# OS noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# local editor state
+.vscode/
+.idea/
