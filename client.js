@@ -20,6 +20,21 @@ window.__ModuleLoader__.load({
     const NS = 'dsh-screenshot'
     const MODE_KEY = 'dsh-screenshot:mode'
 
+    /**
+     * The options panel is deliberately plain white rather than theme-derived:
+     * in a light shell the overlay tokens read as tinted grey, and this menu is
+     * a small transient surface where a flat white card looks right.
+     */
+    const SURFACE = {
+      panel: '#ffffff',
+      border: 'rgba(0, 0, 0, .12)',
+      text: '#1f2023',
+      muted: '#6b7280',
+      rowHover: '#f3f4f6',
+      accent: '#2f6feb',
+      shadow: '0 10px 28px rgba(0, 0, 0, .18)',
+    }
+
     const zh = {
       button: '截图',
       busy: '正在截图…',
@@ -102,8 +117,8 @@ window.__ModuleLoader__.load({
             padding: '6px 8px',
             border: 'none',
             borderRadius: 7,
-            background: hover ? 'var(--dsw-alias-bg-layer-2)' : 'transparent',
-            color: 'var(--dsw-alias-label-primary)',
+            background: hover ? SURFACE.rowHover : 'transparent',
+            color: SURFACE.text,
             textAlign: 'left',
             cursor: 'pointer',
             font: 'inherit',
@@ -128,7 +143,7 @@ window.__ModuleLoader__.load({
               style: {
                 width: 12,
                 flex: '0 0 12px',
-                color: 'var(--dsw-alias-brand-primary)',
+                color: SURFACE.accent,
                 opacity: active ? 1 : 0,
               },
             },
@@ -144,7 +159,7 @@ window.__ModuleLoader__.load({
               marginLeft: 18,
               fontSize: 11,
               lineHeight: '15px',
-              color: 'var(--dsw-alias-label-secondary)',
+              color: SURFACE.muted,
             },
           },
           hint,
@@ -312,9 +327,9 @@ window.__ModuleLoader__.load({
                     width: 232,
                     padding: 4,
                     borderRadius: 10,
-                    background: 'var(--dsw-alias-bg-overlay)',
-                    border: '1px solid var(--dsw-alias-border-l1)',
-                    boxShadow: '0 10px 28px rgba(0, 0, 0, .22)',
+                    background: SURFACE.panel,
+                    border: `1px solid ${SURFACE.border}`,
+                    boxShadow: SURFACE.shadow,
                   },
                 },
                 h(ModeRow, {
