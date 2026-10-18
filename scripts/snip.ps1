@@ -15,6 +15,7 @@ param(
   [string]$TargetFile = '',
   [string]$AutoSelect = '',
   [string]$TitleFragment = '',
+  [int]$HideWindow = 1,
   [string]$SourceDir = ''
 )
 
@@ -37,5 +38,5 @@ $references = @(
 )
 Add-Type -Path $source -ReferencedAssemblies $references
 
-$json = [DshShot]::RunJson($OutPath, $TimeoutSeconds, $TargetFile, $AutoSelect, $TitleFragment)
+$json = [DshShot]::RunJson($OutPath, $TimeoutSeconds, $TargetFile, $AutoSelect, $TitleFragment, ($HideWindow -ne 0))
 [Console]::Out.WriteLine($json)

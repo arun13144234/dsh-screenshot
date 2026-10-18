@@ -56,9 +56,9 @@ public static class DshShot
     }
 
     /// <summary>Run one capture and answer a single-line JSON document.</summary>
-    public static string RunJson(string outPath, int timeoutSeconds, string targetFile, string autoSelect, string titleFragment)
+    public static string RunJson(string outPath, int timeoutSeconds, string targetFile, string autoSelect, string titleFragment, bool hideWindow)
     {
-        Outcome outcome = Run(outPath, timeoutSeconds, targetFile, autoSelect, titleFragment);
+        Outcome outcome = Run(outPath, timeoutSeconds, targetFile, autoSelect, titleFragment, hideWindow);
         return "{"
             + "\"ok\":" + (outcome.ok ? "true" : "false")
             + ",\"path\":" + Quote(outcome.path)
@@ -69,7 +69,7 @@ public static class DshShot
             + "}";
     }
 
-    private static Outcome Run(string outPath, int timeoutSeconds, string targetFile, string autoSelect, string titleFragment)
+    private static Outcome Run(string outPath, int timeoutSeconds, string targetFile, string autoSelect, string titleFragment, bool hideWindow)
     {
         Outcome outcome = new Outcome();
         try { SetProcessDpiAwarenessContext(new IntPtr(-4)); }
@@ -77,30 +77,44 @@ public static class DshShot
 
         // The window to hide is the page's own browser window. The caller passes
         // its document title because the foreground window at spawn time can be a
-        // console that the launcher briefly owned.
-        IntPtr target = FindByTitle(titleFragment);
-        if (target == IntPtr.Zero) target = GetAncestor(GetForegroundWindow(), GA_ROOT);
-        if (target == IntPtr.Zero || !IsWindow(target))
+        // console that the launcher briefly owned. Without hiding there is no
+        // window to find at all: the frozen frame simply keeps what is on screen.
+        IntPtr target = IntPtr.Zero;
+        if (hideWindow)
         {
-            outcome.reason = "failed";
-            outcome.message = "no window to hide";
-            return outcome;
-        }
-        if (targetFile != null && targetFile.Length > 0)
-        {
-            try { File.WriteAllText(targetFile, target.ToInt64().ToString()); } catch { }
+            target = FindByTitle(titleFragment);
+            if (target == IntPtr.Zero) target = GetAncestor(GetForegroundWindow(), GA_ROOT);
+            if (target == IntPtr.Zero || !IsWindow(target))
+            {
+                outcome.reason = "failed";
+                outcome.message = "no window to hide";
+                return outcome;
+            }
+            if (targetFile != null && targetFile.Length > 0)
+            {
+                try { File.WriteAllText(targetFile, target.ToInt64().ToString()); } catch { }
+            }
         }
 
         try
         {
-            ShowWindow(target, SW_HIDE);
-            // The compositor needs a beat before the window is really gone.
-            System.Threading.Thread.Sleep(180);
-            if (IsWindowVisible(target))
+            if (hideWindow)
             {
-                outcome.reason = "failed";
-                outcome.message = "could not hide the source window";
-                return outcome;
+                ShowWindow(target, SW_HIDE);
+                // The compositor needs a beat before the window is really gone.
+                System.Threading.Thread.Sleep(180);
+                if (IsWindowVisible(target))
+                {
+                    outcome.reason = "failed";
+                    outcome.message = "could not hide the source window";
+                    return outcome;
+                }
+            }
+            else
+            {
+                // The veil covers the whole screen anyway; this only lets the
+                // click's own repaint settle so the frozen frame has no hover state.
+                System.Threading.Thread.Sleep(140);
             }
 
             Rectangle virtualScreen = SystemInformation.VirtualScreen;
@@ -171,9 +185,13 @@ public static class DshShot
         }
         finally
         {
-            // Whatever happened above, the user's window must come back.
-            ShowWindow(target, SW_RESTORE);
-            SetForegroundWindow(target);
+            // Whatever happened above, a window we hid must come back. Without
+            // hiding there is nothing to restore, and the target stays zero.
+            if (hideWindow && target != IntPtr.Zero)
+            {
+                ShowWindow(target, SW_RESTORE);
+                SetForegroundWindow(target);
+            }
         }
     }
 

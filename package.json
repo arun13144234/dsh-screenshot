@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-screenshot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Screenshot button for the DeepSeek Harness Web UI: hides the window, captures a screen region, and drops the PNG into the composer draft.",

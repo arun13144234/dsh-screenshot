@@ -161,6 +161,8 @@ export function apply(ctx) {
         }
 
         const title = typeof body.title === 'string' ? body.title.slice(0, MAX_TITLE_CHARS) : ''
+        // The hover panel picks per capture; absent means the default (hide).
+        const hideWindow = body.hide !== false
         const id = randomUUID()
         const outPath = join(tmpdir(), `dsh-screenshot-${id}.png`)
         const targetFile = join(tmpdir(), `dsh-screenshot-${id}.hwnd`)
@@ -179,10 +181,11 @@ export function apply(ctx) {
             SCRIPTS,
           ]
           if (title !== '') args.push('-TitleFragment', title)
+          if (!hideWindow) args.push('-HideWindow', '0')
 
           const run = await runPowerShell(args, PROCESS_TIMEOUT_MS)
           if (run.timedOut) {
-            await restoreWindow(targetFile)
+            if (hideWindow) await restoreWindow(targetFile)
             sendJson(res, 200, {
               ok: false,
               reason: 'failed',
@@ -193,7 +196,7 @@ export function apply(ctx) {
 
           const result = readResultLine(run.stdout)
           if (result === undefined) {
-            await restoreWindow(targetFile)
+            if (hideWindow) await restoreWindow(targetFile)
             const detail = run.stderr.trim().split(/\r?\n/).slice(-3).join(' ')
             sendJson(res, 200, {
               ok: false,
@@ -220,7 +223,7 @@ export function apply(ctx) {
             bytes: bytes.length,
           })
         } catch (error) {
-          await restoreWindow(targetFile)
+          if (hideWindow) await restoreWindow(targetFile)
           sendJson(res, 200, { ok: false, reason: 'failed', message: String(error) })
         } finally {
           await rm(outPath, { force: true }).catch(() => {})

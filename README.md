@@ -1,4 +1,4 @@
-﻿# dsh-screenshot
+# dsh-screenshot
 
 A screenshot button for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web UI: click it, the
 browser window hides, you drag a region on the real desktop, the window comes back, and the PNG
@@ -17,10 +17,16 @@ the model you are describing, the error dialog, the spreadsheet cell that went w
 
 ## Usage
 
-1. Click the screenshot icon in the composer's left tool row (next to the model selector).
-2. The window disappears; a full-screen selection veil appears over a frozen frame of the desktop.
+1. Point at the screenshot icon in the composer's left tool row (next to the model selector). After a
+   moment a small panel opens with two choices — pick one, or just click the icon to reuse the last
+   choice:
+   - **Hide the window first** (default) — the browser window steps aside and you crop the desktop
+     behind it.
+   - **Keep the window** — the screen is captured as it is, this window included.
+2. A full-screen selection veil appears over a frozen frame of the screen.
 3. Drag a rectangle. Release to capture. `Esc` or right-click cancels.
-4. The window returns to the foreground and the crop appears as a thumbnail above the composer.
+4. For the hiding mode the window returns to the foreground; the crop appears as a thumbnail above
+   the composer either way.
 5. Add your question and press Enter when ready.
 
 The helper restores the window in a `finally` block, and a separate restore script unhides it if the
