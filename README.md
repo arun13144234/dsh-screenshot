@@ -6,6 +6,8 @@ lands in the composer draft as a pending attachment. Nothing is sent until you p
 
 English | [中文](README.zh-CN.md)
 
+![Click the icon, the window steps aside, drag a region, annotate it, and the image lands in the composer](docs/demo.gif)
+
 > **Platform:** Windows 10/11 only. The window hiding and screen capture are Win32 calls; other
 > platforms need a different native backend.
 
