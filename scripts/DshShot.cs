@@ -280,7 +280,13 @@ public static class DshShot
         public Rectangle Selection = Rectangle.Empty;
 
         private static readonly Font LabelFont = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
-        private static readonly Brush Veil = new SolidBrush(Color.FromArgb(110, 0, 0, 0));
+        /** White veil: the area outside the selection is washed out rather than darkened. */
+        private static readonly Brush Veil = new SolidBrush(Color.FromArgb(112, 255, 255, 255));
+        /** Badge plate and its text, kept legible on the light veil. */
+        private static readonly Brush BadgePlate = new SolidBrush(Color.FromArgb(214, 255, 255, 255));
+        private static readonly Brush BadgeText = new SolidBrush(Color.FromArgb(28, 28, 28));
+        private static readonly Pen BorderOuter = new Pen(Color.FromArgb(255, 0, 0, 0), 1f);
+        private static readonly Pen BorderInner = new Pen(Color.FromArgb(255, 255, 255, 255), 1f);
 
         public Selector(Bitmap frozen, Rectangle screen, int timeoutSeconds)
         {
@@ -343,11 +349,8 @@ public static class DshShot
                 SizeF size = g.MeasureString(hint, LabelFont);
                 float x = (ClientSize.Width - size.Width) / 2f;
                 float y = 56f;
-                using (SolidBrush back = new SolidBrush(Color.FromArgb(190, 0, 0, 0)))
-                {
-                    g.FillRectangle(back, x - 16f, y - 9f, size.Width + 32f, size.Height + 18f);
-                }
-                g.DrawString(hint, LabelFont, Brushes.White, x, y);
+                g.FillRectangle(BadgePlate, x - 16f, y - 9f, size.Width + 32f, size.Height + 18f);
+                g.DrawString(hint, LabelFont, BadgeText, x, y);
                 return;
             }
 
@@ -356,20 +359,17 @@ public static class DshShot
             g.DrawImageUnscaled(frozen, 0, 0);
             g.Restore(state);
 
-            using (Pen border = new Pen(Color.FromArgb(255, 255, 255), 1f))
-            {
-                g.DrawRectangle(border, Selection.X, Selection.Y, Selection.Width - 1, Selection.Height - 1);
-            }
+            // A black ring with a white ring inside it: at least one of the two
+            // contrasts with whatever content the edge happens to cross.
+            g.DrawRectangle(BorderOuter, Selection.X, Selection.Y, Selection.Width - 1, Selection.Height - 1);
+            g.DrawRectangle(BorderInner, Selection.X + 1, Selection.Y + 1, Selection.Width - 3, Selection.Height - 3);
 
             string badge = Selection.Width.ToString() + " \u00d7 " + Selection.Height.ToString();
             SizeF badgeSize = g.MeasureString(badge, LabelFont);
             float badgeX = Selection.X;
             float badgeY = Selection.Y > 30f ? Selection.Y - 28f : Selection.Bottom + 8f;
-            using (SolidBrush back = new SolidBrush(Color.FromArgb(210, 0, 0, 0)))
-            {
-                g.FillRectangle(back, badgeX, badgeY, badgeSize.Width + 14f, badgeSize.Height + 6f);
-            }
-            g.DrawString(badge, LabelFont, Brushes.White, badgeX + 7f, badgeY + 3f);
+            g.FillRectangle(BadgePlate, badgeX, badgeY, badgeSize.Width + 14f, badgeSize.Height + 6f);
+            g.DrawString(badge, LabelFont, BadgeText, badgeX + 7f, badgeY + 3f);
         }
 
         protected override void OnMouseDown(MouseEventArgs e)
