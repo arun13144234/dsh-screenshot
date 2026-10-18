@@ -24,10 +24,13 @@ the model you are describing, the error dialog, the spreadsheet cell that went w
      behind it.
    - **Keep the window** — the screen is captured as it is, this window included.
 2. A full-screen selection veil appears over a frozen frame of the screen.
-3. Drag a rectangle. Release to capture. `Esc` or right-click cancels.
-4. For the hiding mode the window returns to the foreground; the crop appears as a thumbnail above
+3. Drag a rectangle. Release it and the selection stays put with a small toolbar at its bottom
+   right: rectangle, arrow, undo, confirm, cancel.
+4. Draw rectangles and arrows inside the selection; `Ctrl+Z` removes the last mark.
+5. Press the tick (or `Enter`) to finish, or the cross (`Esc` also cancels).
+6. For the hiding mode the window returns to the foreground; the crop appears as a thumbnail above
    the composer either way.
-5. Add your question and press Enter when ready.
+7. Add your question and press Enter when ready.
 
 The helper restores the window in a `finally` block, and a separate restore script unhides it if the
 capture process is killed outright, so a failed attempt never strands a hidden window.
@@ -64,10 +67,10 @@ here.
 |---|---|---|
 | Host | `index.js` | `POST /dsh-screenshot/snip` → spawns the PowerShell helper, answers with the PNG as a data URL |
 | Client | `client.js` | the button; hands the PNG to the composer through a `drop` event |
-| Native | `scripts/snip.ps1` + `scripts/DshShot.cs` | hide window, freeze screen, draw the selection veil, crop, save, restore |
+| Native | `scripts/snip.ps1` + `scripts/DshShot.cs` | hide window, freeze screen, draw the selection veil, run the annotation stage, crop, save, restore |
 | Safety net | `scripts/restore.ps1` | unhides the window by handle if the helper dies |
 
-Three decisions worth knowing about:
+Four decisions worth knowing about:
 
 - **Own selection overlay instead of the system snipping tool.** `ms-screenclip:` is the nicer
   interaction, but on the machines we tested it is registered without a `shell\open\command` and
@@ -81,6 +84,10 @@ Three decisions worth knowing about:
   whose caption contains it, skipping console processes. If nothing matches it falls back to the
   foreground window, and it verifies `IsWindowVisible` is false before capturing — hiding the wrong
   window produces an error instead of a screenshot of your own chat.
+- **Annotations are composited natively.** Marks live in the overlay's coordinate space and are drawn
+  onto the crop before the PNG is written, so the browser only ever receives finished pixels — no
+  canvas layer, no second round trip, and no chance of the annotation drifting from the image it
+  belongs to.
 
 ## Development
 
@@ -105,11 +112,22 @@ Note that this must run **outside** the DSH tool sandbox: cross-process window c
 inside it. It is meant to be spawned by the plugin's Host half, which is a normal child of the DSH
 process.
 
+The annotation stage has its own headless test. It drives the real window messages, draws a rectangle
+and an arrow, clicks the tick, and asserts the composited crop contains red pixels:
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -STA -ExecutionPolicy Bypass `
+  -File scripts\selftest-annotations.ps1
+```
+
+Expected tail: `SELFTEST OK`. The overlay flashes full-screen for a couple of seconds while it runs.
+
 ## Limitations
 
 - Windows only, and it captures the virtual screen as one surface (multi-monitor selections work, but
   per-monitor DPI differences are flattened).
-- No annotations, OCR, scrolling capture, or "capture one window" mode.
+- The annotation stage is deliberately small: rectangles and arrows, one colour, undo only. No text,
+  freehand pen, blur, mosaic, OCR, or scrolling capture.
 - The screen behind is frozen at the moment of hiding; anything that updates while you are still
   dragging is not reflected.
 - Not installable through `npm install` as a package right now — install it as a bundle directory.

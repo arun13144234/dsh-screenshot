@@ -4,6 +4,7 @@
 // C# 5-compatible (no string interpolation, no expression-bodied members).
 
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -125,7 +126,8 @@ public static class DshShot
                     g.CopyFromScreen(virtualScreen.X, virtualScreen.Y, 0, 0, frozen.Size, CopyPixelOperation.SourceCopy);
                 }
 
-                Rectangle selection;
+                Rectangle selection = Rectangle.Empty;
+                Bitmap composed = null;
                 if (autoSelect != null && autoSelect.Length > 0)
                 {
                     selection = ParseRectangle(autoSelect);
@@ -142,37 +144,49 @@ public static class DshShot
                     using (Selector selector = new Selector(frozen, virtualScreen, timeoutSeconds))
                     {
                         Application.Run(selector);
-                        if (selector.Cancelled)
+                        if (selector.Cancelled || selector.Result == null)
                         {
                             outcome.reason = "cancelled";
                             return outcome;
                         }
-                        selection = selector.Selection;
+                        // The selector composites annotations itself, so the crop
+                        // it hands back is already the final pixels.
+                        composed = selector.Result;
                     }
                 }
 
-                Rectangle safe = Rectangle.Intersect(selection, new Rectangle(0, 0, frozen.Width, frozen.Height));
-                if (safe.Width < 1 || safe.Height < 1)
+                Bitmap output = composed;
+                if (output == null)
                 {
-                    outcome.reason = "cancelled";
-                    return outcome;
-                }
-
-                using (Bitmap crop = new Bitmap(safe.Width, safe.Height, PixelFormat.Format32bppPArgb))
-                {
-                    using (Graphics g = Graphics.FromImage(crop))
+                    Rectangle safe = Rectangle.Intersect(selection, new Rectangle(0, 0, frozen.Width, frozen.Height));
+                    if (safe.Width < 1 || safe.Height < 1)
+                    {
+                        outcome.reason = "cancelled";
+                        return outcome;
+                    }
+                    output = new Bitmap(safe.Width, safe.Height, PixelFormat.Format32bppPArgb);
+                    using (Graphics g = Graphics.FromImage(output))
                     {
                         g.DrawImage(frozen, new Rectangle(0, 0, safe.Width, safe.Height), safe, GraphicsUnit.Pixel);
                     }
-                    string directory = Path.GetDirectoryName(outPath);
-                    if (directory != null && directory.Length > 0) Directory.CreateDirectory(directory);
-                    crop.Save(outPath, ImageFormat.Png);
                 }
 
-                outcome.ok = true;
-                outcome.path = outPath;
-                outcome.width = safe.Width;
-                outcome.height = safe.Height;
+                try
+                {
+                    string directory = Path.GetDirectoryName(outPath);
+                    if (directory != null && directory.Length > 0) Directory.CreateDirectory(directory);
+                    output.Save(outPath, ImageFormat.Png);
+
+                    outcome.ok = true;
+                    outcome.path = outPath;
+                    outcome.width = output.Width;
+                    outcome.height = output.Height;
+                }
+                finally
+                {
+                    output.Dispose();
+                }
+
                 return outcome;
             }
         }
@@ -266,21 +280,52 @@ public static class DshShot
         return sb.Append('"').ToString();
     }
 
-    /// <summary>Full-screen selection overlay painted over the frozen frame.</summary>
+    /// <summary>
+    /// Full-screen selection overlay: drag a region, then annotate it in place
+    /// with rectangles and arrows and confirm with the toolbar's tick, the way a
+    /// chat client's screenshot tool works. The marks are composited into the
+    /// returned bitmap, so callers only ever save finished pixels.
+    /// </summary>
     public sealed class Selector : Form
     {
+        private const int ToolRect = 0;
+        private const int ToolArrow = 1;
+        private const int ButtonSize = 28;
+        private const int ButtonGap = 4;
+        private const int ToolCount = 5;
+
         private readonly Bitmap frozen;
         private readonly Timer clock;
-        private readonly DateTime started = DateTime.UtcNow;
         private readonly int timeoutSeconds;
+        private readonly List<Annotation> annotations = new List<Annotation>();
+        private readonly List<Button> buttons = new List<Button>();
+        private readonly ToolTip tooltips = new ToolTip();
+        private DateTime started = DateTime.UtcNow;
+
         private Point press;
         private bool dragging;
+        private bool editing;
+        private bool annotating;
+        private Annotation pending;
+        private int tool = ToolRect;
 
         public bool Cancelled = true;
         public Rectangle Selection = Rectangle.Empty;
+        /// <summary>Finished crop with annotations, or null when nothing was captured.</summary>
+        public Bitmap Result;
 
         private static readonly Font LabelFont = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
+        private static readonly Font GlyphFont = new Font("Segoe UI Symbol", 11f, FontStyle.Regular, GraphicsUnit.Point);
         private static readonly Brush Veil = new SolidBrush(Color.FromArgb(110, 0, 0, 0));
+        private static readonly Color Ink = Color.FromArgb(232, 62, 62);
+
+        /// <summary>One drawn mark, in the overlay's own coordinates.</summary>
+        private sealed class Annotation
+        {
+            public int Kind;
+            public Point From;
+            public Point To;
+        }
 
         public Selector(Bitmap frozen, Rectangle screen, int timeoutSeconds)
         {
@@ -297,10 +342,35 @@ public static class DshShot
             BackColor = Color.Black;
             KeyPreview = true;
 
+            AddToolButton("\u25A1", "\u77e9\u5f62", delegate { tool = ToolRect; });
+            AddToolButton("\u2197", "\u7bad\u5934", delegate { tool = ToolArrow; });
+            AddToolButton("\u21B6", "\u64a4\u9500 (Ctrl+Z)", delegate { Undo(); });
+            AddToolButton("\u2713", "\u786e\u8ba4 (Enter)", delegate { Confirm(); });
+            AddToolButton("\u2715", "\u53d6\u6d88 (Esc)", delegate { Cancelled = true; Close(); });
+
             clock = new Timer();
             clock.Interval = 250;
             clock.Tick += OnTick;
             clock.Start();
+        }
+
+        private void AddToolButton(string glyph, string tip, EventHandler onClick)
+        {
+            Button button = new Button();
+            button.Text = glyph;
+            button.Font = GlyphFont;
+            button.Size = new Size(ButtonSize, ButtonSize);
+            button.FlatStyle = FlatStyle.Flat;
+            button.FlatAppearance.BorderSize = 1;
+            button.FlatAppearance.BorderColor = Color.FromArgb(206, 206, 206);
+            button.BackColor = Color.White;
+            button.ForeColor = Color.FromArgb(32, 32, 32);
+            button.TabStop = false;
+            button.Visible = false;
+            tooltips.SetToolTip(button, tip);
+            button.Click += onClick;
+            buttons.Add(button);
+            Controls.Add(button);
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -327,7 +397,118 @@ public static class DshShot
                 Close();
                 return true;
             }
+            if (editing && (keyData == Keys.Enter || keyData == Keys.Return))
+            {
+                Confirm();
+                return true;
+            }
+            if (editing && keyData == (Keys.Control | Keys.Z))
+            {
+                Undo();
+                return true;
+            }
             return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        /// <summary>Reveal the toolbar once a region is worth editing.</summary>
+        private void EnterEditing()
+        {
+            editing = true;
+            LayoutToolbar();
+            foreach (Button button in buttons) button.Visible = true;
+            Invalidate();
+        }
+
+        private void LayoutToolbar()
+        {
+            int total = ToolCount * ButtonSize + (ToolCount - 1) * ButtonGap;
+            int x = Selection.Right - total;
+            if (x < 8) x = 8;
+            if (x + total > ClientSize.Width - 8) x = Math.Max(8, ClientSize.Width - 8 - total);
+
+            int y = Selection.Bottom + 10;
+            if (y + ButtonSize > ClientSize.Height - 8) y = Selection.Top - 10 - ButtonSize;
+            if (y < 8) y = Math.Max(8, Selection.Bottom - 10 - ButtonSize);
+
+            for (int index = 0; index < buttons.Count; index += 1)
+            {
+                buttons[index].Location = new Point(x + index * (ButtonSize + ButtonGap), y);
+            }
+        }
+
+        private void Undo()
+        {
+            if (annotations.Count == 0) return;
+            annotations.RemoveAt(annotations.Count - 1);
+            Invalidate();
+        }
+
+        /// <summary>Composite the selection and its marks into the returned bitmap.</summary>
+        private void Confirm()
+        {
+            Rectangle safe = Rectangle.Intersect(Selection, new Rectangle(0, 0, frozen.Width, frozen.Height));
+            if (safe.Width < 1 || safe.Height < 1)
+            {
+                Cancelled = true;
+                Close();
+                return;
+            }
+
+            Bitmap output = new Bitmap(safe.Width, safe.Height, PixelFormat.Format32bppPArgb);
+            using (Graphics g = Graphics.FromImage(output))
+            {
+                g.DrawImage(frozen, new Rectangle(0, 0, safe.Width, safe.Height), safe, GraphicsUnit.Pixel);
+                if (annotations.Count > 0)
+                {
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                    g.TranslateTransform(-safe.X, -safe.Y);
+                    foreach (Annotation mark in annotations) DrawAnnotation(g, mark);
+                }
+            }
+
+            Result = output;
+            Selection = safe;
+            Cancelled = false;
+            Close();
+        }
+
+        private static void DrawAnnotation(Graphics g, Annotation mark)
+        {
+            using (Pen pen = new Pen(Ink, 2.8f))
+            {
+                pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+                pen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+                pen.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
+
+                if (mark.Kind == ToolRect)
+                {
+                    Rectangle box = Normalize(mark.From, mark.To);
+                    if (box.Width < 1 || box.Height < 1) return;
+                    g.DrawRectangle(pen, box.X, box.Y, box.Width, box.Height);
+                    return;
+                }
+
+                g.DrawLine(pen, mark.From, mark.To);
+                double angle = Math.Atan2(mark.To.Y - mark.From.Y, mark.To.X - mark.From.X);
+                const double headLength = 15.0;
+                const double spread = 0.46;
+                PointF left = new PointF(
+                    (float)(mark.To.X - headLength * Math.Cos(angle - spread)),
+                    (float)(mark.To.Y - headLength * Math.Sin(angle - spread)));
+                PointF right = new PointF(
+                    (float)(mark.To.X - headLength * Math.Cos(angle + spread)),
+                    (float)(mark.To.Y - headLength * Math.Sin(angle + spread)));
+                g.DrawLine(pen, mark.To, left);
+                g.DrawLine(pen, mark.To, right);
+            }
+        }
+
+        private static Rectangle Normalize(Point from, Point to)
+        {
+            int x = Math.Min(from.X, to.X);
+            int y = Math.Min(from.Y, to.Y);
+            return new Rectangle(x, y, Math.Abs(to.X - from.X), Math.Abs(to.Y - from.Y));
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -336,18 +517,9 @@ public static class DshShot
             g.DrawImageUnscaled(frozen, 0, 0);
             g.FillRectangle(Veil, new Rectangle(0, 0, ClientSize.Width, ClientSize.Height));
 
-            bool live = dragging && Selection.Width > 0 && Selection.Height > 0;
-            if (!live)
+            if (Selection.Width <= 0 || Selection.Height <= 0)
             {
-                string hint = "\u62d6\u52a8\u9009\u62e9\u533a\u57df    \u00b7    Esc \u53d6\u6d88    \u00b7    \u53f3\u952e\u53d6\u6d88";
-                SizeF size = g.MeasureString(hint, LabelFont);
-                float x = (ClientSize.Width - size.Width) / 2f;
-                float y = 56f;
-                using (SolidBrush back = new SolidBrush(Color.FromArgb(190, 0, 0, 0)))
-                {
-                    g.FillRectangle(back, x - 16f, y - 9f, size.Width + 32f, size.Height + 18f);
-                }
-                g.DrawString(hint, LabelFont, Brushes.White, x, y);
+                DrawHint(g);
                 return;
             }
 
@@ -355,6 +527,17 @@ public static class DshShot
             g.SetClip(Selection);
             g.DrawImageUnscaled(frozen, 0, 0);
             g.Restore(state);
+
+            if (annotations.Count > 0 || pending != null)
+            {
+                System.Drawing.Drawing2D.GraphicsState clip = g.Save();
+                g.SetClip(Selection);
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                foreach (Annotation mark in annotations) DrawAnnotation(g, mark);
+                if (pending != null) DrawAnnotation(g, pending);
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.Default;
+                g.Restore(clip);
+            }
 
             using (Pen border = new Pen(Color.FromArgb(255, 255, 255), 1f))
             {
@@ -372,8 +555,22 @@ public static class DshShot
             g.DrawString(badge, LabelFont, Brushes.White, badgeX + 7f, badgeY + 3f);
         }
 
+        private void DrawHint(Graphics g)
+        {
+            string hint = "\u62d6\u52a8\u9009\u62e9\u533a\u57df    \u00b7    Esc \u53d6\u6d88    \u00b7    \u53f3\u952e\u53d6\u6d88";
+            SizeF size = g.MeasureString(hint, LabelFont);
+            float x = (ClientSize.Width - size.Width) / 2f;
+            float y = 56f;
+            using (SolidBrush back = new SolidBrush(Color.FromArgb(190, 0, 0, 0)))
+            {
+                g.FillRectangle(back, x - 16f, y - 9f, size.Width + 32f, size.Height + 18f);
+            }
+            g.DrawString(hint, LabelFont, Brushes.White, x, y);
+        }
+
         protected override void OnMouseDown(MouseEventArgs e)
         {
+            started = DateTime.UtcNow;
             if (e.Button == MouseButtons.Right)
             {
                 Cancelled = true;
@@ -381,6 +578,19 @@ public static class DshShot
                 return;
             }
             if (e.Button != MouseButtons.Left) return;
+
+            if (editing)
+            {
+                if (!Selection.Contains(e.Location)) return;
+                annotating = true;
+                pending = new Annotation();
+                pending.Kind = tool;
+                pending.From = e.Location;
+                pending.To = e.Location;
+                Invalidate();
+                return;
+            }
+
             press = e.Location;
             dragging = true;
             Selection = new Rectangle(e.Location, Size.Empty);
@@ -389,6 +599,12 @@ public static class DshShot
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
+            if (annotating && pending != null)
+            {
+                pending.To = e.Location;
+                Invalidate();
+                return;
+            }
             if (!dragging) return;
             int x1 = Math.Min(press.X, e.X);
             int y1 = Math.Min(press.Y, e.Y);
@@ -400,12 +616,24 @@ public static class DshShot
 
         protected override void OnMouseUp(MouseEventArgs e)
         {
+            if (annotating)
+            {
+                annotating = false;
+                if (pending != null)
+                {
+                    int reach = Math.Abs(pending.To.X - pending.From.X) + Math.Abs(pending.To.Y - pending.From.Y);
+                    if (reach >= 4) annotations.Add(pending);
+                    pending = null;
+                }
+                Invalidate();
+                return;
+            }
+
             if (!dragging) return;
             dragging = false;
             if (Selection.Width >= 5 && Selection.Height >= 5)
             {
-                Cancelled = false;
-                Close();
+                EnterEditing();
                 return;
             }
             // A stray click keeps the mode open instead of cancelling it.
@@ -417,6 +645,7 @@ public static class DshShot
         {
             clock.Stop();
             clock.Dispose();
+            tooltips.Dispose();
             base.OnFormClosed(e);
         }
     }
